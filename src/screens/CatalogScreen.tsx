@@ -1,128 +1,213 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, TextInput, Button } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Modal, TextInput, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import ProductCard from '../components/ProductCard';
+import FloatingButton from '../components/FloatingButton';
+import CategoryChip from '../components/CategoryChip';
+import SectionTitle from '../components/SectionTitle';
 import { useShoppingData } from '../hooks/useShoppingData';
-import { Item } from '../types/models';
+import { Product } from '../types/models';
+import { colors } from '../theme/colors';
+import { spacing } from '../theme/spacing';
+import { typography } from '../theme/typography';
+import { shadows } from '../theme/shadows';
 
 const CatalogScreen: React.FC = () => {
-  const { catalog, categories, stores, addCatalogItem, updateCatalogItem, deleteCatalogItem } = useShoppingData();
+  const { products, categories, stores, addProduct, updateProduct, deleteProduct, addStore } = useShoppingData();
   const [modalVisible, setModalVisible] = useState(false);
-  const [editingItem, setEditingItem] = useState<Item | null>(null);
-  const [form, setForm] = useState({ name: '', categoryId: '', unit: '', storeId: '' });
+  const [editingItem, setEditingItem] = useState<Product | null>(null);
+  const [form, setForm] = useState({ name: '', category: '', unit: '', defaultStore: '', estimatedPrice: '' });
+  const [filterCategory, setFilterCategory] = useState('');
+  const [query, setQuery] = useState('');
 
-  const openModal = (item?: Item) => {
+  const openModal = (item?: Product) => {
     if (item) {
       setEditingItem(item);
       setForm({
         name: item.name,
-        categoryId: item.defaultCategoryId,
-        unit: item.unit ?? '',
-        storeId: item.defaultStoreId ?? '',
+        category: item.category,
+        unit: item.unit,
+        defaultStore: item.defaultStore,
+        estimatedPrice: item.estimatedPrice.toString(),
       });
     } else {
       setEditingItem(null);
-      setForm({ name: '', categoryId: categories[0]?.id ?? '', unit: '', storeId: stores[0]?.id ?? '' });
+      setForm({
+        name: '',
+        category: categories[0] ?? '',
+        unit: '',
+        defaultStore: stores[0]?.name ?? '',
+        estimatedPrice: '',
+      });
     }
     setModalVisible(true);
   };
 
   const handleSave = async () => {
-    if (!form.name.trim() || !form.categoryId) return;
+    if (!form.name.trim() || !form.category.trim()) return;
+    const price = Number(form.estimatedPrice) || 0;
+    if (!price) return;
+    const payload = {
+      name: form.name.trim(),
+      category: form.category.trim(),
+      unit: form.unit.trim() || 'unidad',
+      defaultStore: form.defaultStore.trim() || stores[0]?.name || 'D1',
+      estimatedPrice: price,
+    };
     if (editingItem) {
-      await updateCatalogItem(editingItem.id, {
-        name: form.name,
-        defaultCategoryId: form.categoryId,
-        unit: form.unit,
-        defaultStoreId: form.storeId || undefined,
-      });
+      await updateProduct(editingItem.id, payload);
+      await addStore(payload.defaultStore);
     } else {
-      await addCatalogItem({
-        name: form.name,
-        defaultCategoryId: form.categoryId,
-        unit: form.unit,
-        defaultStoreId: form.storeId || undefined,
-      });
+      await addProduct(payload);
+      await addStore(payload.defaultStore);
     }
     setModalVisible(false);
   };
 
+  const filteredProducts = useMemo(() => {
+    return products
+      .filter((item) => (filterCategory ? item.category === filterCategory : true))
+      .filter((item) => item.name.toLowerCase().includes(query.toLowerCase()))
+      .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+  }, [products, filterCategory, query]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, Product[]>();
+    filteredProducts.forEach((product) => {
+      const key = product.category;
+      const items = map.get(key) ?? [];
+      map.set(key, [...items, product]);
+    });
+    return Array.from(map.entries());
+  }, [filteredProducts]);
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Catálogo de productos</Text>
-      <FlatList
-        data={catalog}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.card} onPress={() => openModal(item)}>
-            <View>
-              <Text style={styles.cardTitle}>{item.name}</Text>
-              <Text style={styles.cardSubtitle}>
-                Categoría: {categories.find((c) => c.id === item.defaultCategoryId)?.name ?? 'Sin categoría'}
-              </Text>
-              {item.unit ? <Text style={styles.cardSubtitle}>Unidad: {item.unit}</Text> : null}
-              {item.defaultStoreId ? (
-                <Text style={styles.cardSubtitle}>
-                  Tienda sugerida: {stores.find((s) => s.id === item.defaultStoreId)?.name}
-                </Text>
-              ) : null}
-            </View>
-            <TouchableOpacity onPress={() => deleteCatalogItem(item.id)}>
-              <Text style={styles.delete}>Eliminar</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        )}
-        contentContainerStyle={{ paddingBottom: 120 }}
-      />
-      <TouchableOpacity style={styles.fab} onPress={() => openModal()}>
-        <Text style={styles.fabText}>+ Agregar</Text>
-      </TouchableOpacity>
+      <SectionTitle title='Catálogo' description='Productos base para tus listas' />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.md }}>
+        <CategoryChip label='Todos' selected={!filterCategory} onPress={() => setFilterCategory('')} />
+        {categories.map((category) => (
+          <CategoryChip
+            key={category}
+            label={category}
+            selected={filterCategory === category}
+            onPress={() => setFilterCategory(category)}
+          />
+        ))}
+      </ScrollView>
 
-      <Modal visible={modalVisible} transparent animationType="slide">
+      <View style={styles.searchRow}>
+        <View style={styles.searchBox}>
+          <Ionicons name='search-outline' size={18} color={colors.textMuted} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder='Buscar en catálogo'
+            placeholderTextColor={colors.textMuted}
+            value={query}
+            onChangeText={setQuery}
+          />
+        </View>
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: spacing.xxl * 2 }}>
+        {grouped.map(([category, items]) => (
+          <View key={category} style={styles.group}>
+            <Text style={styles.groupTitle}>{category}</Text>
+            {items.map((item) => (
+              <ProductCard
+                key={item.id}
+                name={item.name}
+                category={item.category}
+                unit={item.unit}
+                store={item.defaultStore}
+                estimatedPrice={item.estimatedPrice}
+                onPress={() => openModal(item)}
+                onDelete={() => deleteProduct(item.id)}
+              />
+            ))}
+          </View>
+        ))}
+        {grouped.length === 0 ? <Text style={styles.empty}>No hay productos en el catálogo.</Text> : null}
+      </ScrollView>
+
+      <FloatingButton
+        label='Agregar'
+        icon={<Ionicons name='add-circle' size={24} color='#fff' />}
+        onPress={() => openModal()}
+      />
+
+      <Modal visible={modalVisible} transparent animationType='fade'>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{editingItem ? 'Editar ítem' : 'Nuevo ítem'}</Text>
+            <Text style={styles.modalTitle}>{editingItem ? 'Editar producto' : 'Nuevo producto'}</Text>
             <TextInput
               style={styles.input}
-              placeholder="Nombre"
+              placeholder='Nombre'
+              placeholderTextColor={colors.textMuted}
               value={form.name}
               onChangeText={(text) => setForm((prev) => ({ ...prev, name: text }))}
             />
             <Text style={styles.label}>Categoría</Text>
-            <View style={styles.chipsRow}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.md }}>
               {categories.map((category) => (
-                <TouchableOpacity
-                  key={category.id}
-                  style={[styles.chip, form.categoryId === category.id && styles.chipSelected]}
-                  onPress={() => setForm((prev) => ({ ...prev, categoryId: category.id }))}
-                >
-                  <Text style={form.categoryId === category.id ? styles.chipTextSelected : styles.chipText}>
-                    {category.name}
-                  </Text>
-                </TouchableOpacity>
+                <CategoryChip
+                  key={category}
+                  label={category}
+                  selected={form.category === category}
+                  onPress={() => setForm((prev) => ({ ...prev, category }))}
+                />
               ))}
-            </View>
+              {!categories.includes(form.category) && form.category ? (
+                <CategoryChip label={form.category} selected onPress={() => {}} />
+              ) : null}
+            </ScrollView>
             <TextInput
               style={styles.input}
-              placeholder="Unidad (opcional)"
+              placeholder='O escribe la categoría'
+              placeholderTextColor={colors.textMuted}
+              value={form.category}
+              onChangeText={(text) => setForm((prev) => ({ ...prev, category: text }))}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder='Unidad (ej. kg, und)'
+              placeholderTextColor={colors.textMuted}
               value={form.unit}
               onChangeText={(text) => setForm((prev) => ({ ...prev, unit: text }))}
             />
             <Text style={styles.label}>Tienda sugerida</Text>
-            <View style={styles.chipsRow}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.md }}>
               {stores.map((store) => (
-                <TouchableOpacity
+                <CategoryChip
                   key={store.id}
-                  style={[styles.chip, form.storeId === store.id && styles.chipSelected]}
-                  onPress={() => setForm((prev) => ({ ...prev, storeId: store.id }))}
-                >
-                  <Text style={form.storeId === store.id ? styles.chipTextSelected : styles.chipText}>
-                    {store.name}
-                  </Text>
-                </TouchableOpacity>
+                  label={store.name}
+                  selected={form.defaultStore === store.name}
+                  onPress={() => setForm((prev) => ({ ...prev, defaultStore: store.name }))}
+                />
               ))}
-            </View>
-            <View style={styles.modalButtons}>
-              <Button title="Cancelar" onPress={() => setModalVisible(false)} color="#6B7280" />
-              <Button title="Guardar" onPress={handleSave} color="#4F46E5" />
+            </ScrollView>
+            <TextInput
+              style={styles.input}
+              placeholder='O escribe la tienda'
+              placeholderTextColor={colors.textMuted}
+              value={form.defaultStore}
+              onChangeText={(text) => setForm((prev) => ({ ...prev, defaultStore: text }))}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder='Precio estimado'
+              placeholderTextColor={colors.textMuted}
+              keyboardType='numeric'
+              value={form.estimatedPrice}
+              onChangeText={(text) => setForm((prev) => ({ ...prev, estimatedPrice: text }))}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity onPress={() => setModalVisible(false)}>
+                <Text style={styles.secondaryAction}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleSave}>
+                <Text style={styles.primaryAction}>Guardar</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -134,117 +219,85 @@ const CatalogScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 12,
-    color: '#111827',
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
+  searchRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    gap: spacing.sm,
+    marginBottom: spacing.md,
   },
-  cardTitle: {
-    fontWeight: '700',
-    fontSize: 16,
-    color: '#111827',
+  searchBox: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.sm,
   },
-  cardSubtitle: {
-    color: '#4B5563',
+  searchInput: {
+    flex: 1,
+    ...typography.body,
   },
-  delete: {
-    color: '#DC2626',
-    fontWeight: '700',
+  group: {
+    marginBottom: spacing.lg,
   },
-  fab: {
-    position: 'absolute',
-    right: 16,
-    bottom: 24,
-    backgroundColor: '#4F46E5',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 30,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 8,
-    elevation: 5,
+  groupTitle: {
+    ...typography.h3,
+    marginBottom: spacing.sm,
   },
-  fabText: {
-    color: '#fff',
-    fontWeight: '700',
+  empty: {
+    ...typography.body,
+    color: colors.textMuted,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'center',
-    padding: 16,
+    padding: spacing.lg,
   },
   modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    padding: spacing.lg,
+    ...shadows.md,
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 12,
+    ...typography.h2,
+    marginBottom: spacing.md,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-    backgroundColor: '#F9FAFB',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  chipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 12,
-  },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#fff',
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  chipSelected: {
-    backgroundColor: '#4F46E5',
-    borderColor: '#4F46E5',
-  },
-  chipText: {
-    color: '#111827',
-  },
-  chipTextSelected: {
-    color: '#fff',
-    fontWeight: '700',
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    backgroundColor: colors.surfaceMuted,
   },
   label: {
-    fontWeight: '600',
-    marginBottom: 6,
-    color: '#111827',
+    ...typography.subtitle,
+    marginBottom: spacing.sm,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.md,
+  },
+  primaryAction: {
+    ...typography.h3,
+    color: colors.primary,
+  },
+  secondaryAction: {
+    ...typography.body,
+    color: colors.textMuted,
   },
 });
 

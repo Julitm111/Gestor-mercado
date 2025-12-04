@@ -1,74 +1,78 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
 import { v4 as uuidv4 } from 'uuid';
+import { ListItem, Product, ShoppingList, Store } from '../types/models';
 import {
-  Category,
-  Item,
-  ShoppingList,
-  ShoppingListItem,
-  Store,
-} from '../types/models';
-import {
-  getCatalogItems,
-  getCategories,
-  getShoppingListItems,
+  getProducts,
   getShoppingLists,
   getStores,
-  saveCatalogItems,
-  saveCategories,
-  saveShoppingListItems,
+  saveProducts,
   saveShoppingLists,
   saveStores,
   seedInitialData,
 } from '../storage/storage';
+import { calculateItemSubtotal, recalculateList } from '../utils/calculations';
 
 interface ShoppingDataContextValue {
-  categories: Category[];
-  stores: Store[];
-  catalog: Item[];
+  products: Product[];
   shoppingLists: ShoppingList[];
-  shoppingListItems: ShoppingListItem[];
+  stores: Store[];
+  categories: string[];
   loading: boolean;
   refresh: () => Promise<void>;
-  addList: (payload: { name: string; budget?: number }) => Promise<void>;
+  addList: (payload: { name: string; budget: number }) => Promise<void>;
   updateList: (id: string, payload: Partial<ShoppingList>) => Promise<void>;
   deleteList: (id: string) => Promise<void>;
-  addListItem: (item: Omit<ShoppingListItem, 'id'>) => Promise<void>;
-  updateListItem: (id: string, changes: Partial<ShoppingListItem>) => Promise<void>;
-  deleteListItem: (id: string) => Promise<void>;
-  addCatalogItem: (item: Omit<Item, 'id'>) => Promise<void>;
-  updateCatalogItem: (id: string, changes: Partial<Item>) => Promise<void>;
-  deleteCatalogItem: (id: string) => Promise<void>;
-  addStore: (store: Omit<Store, 'id'>) => Promise<void>;
-  updateStore: (id: string, changes: Partial<Store>) => Promise<void>;
-  deleteStore: (id: string) => Promise<void>;
+  addListItem: (listId: string, item: Omit<ListItem, 'id' | 'subtotal'>) => Promise<void>;
+  updateListItem: (listId: string, itemId: string, changes: Partial<ListItem>) => Promise<void>;
+  deleteListItem: (listId: string, itemId: string) => Promise<void>;
+  addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
+  updateProduct: (id: string, changes: Partial<Product>) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
+  addStore: (name: string) => Promise<void>;
 }
 
 const ShoppingDataContext = createContext<ShoppingDataContextValue | undefined>(undefined);
 
+const ensureListTotals = (lists: ShoppingList[]): ShoppingList[] =>
+  lists.map((list) => recalculateList({ ...list, items: list.items || [], budget: list.budget ?? 0 }));
+
 export const ShoppingDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [stores, setStores] = useState<Store[]>([]);
-  const [catalog, setCatalog] = useState<Item[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [shoppingLists, setShoppingLists] = useState<ShoppingList[]>([]);
-  const [shoppingListItems, setShoppingListItems] = useState<ShoppingListItem[]>([]);
+  const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   const loadData = async () => {
     setLoading(true);
     await seedInitialData();
-    const [categoriesData, storesData, catalogData, listsData, listItemsData] = await Promise.all([
-      getCategories(),
-      getStores(),
-      getCatalogItems(),
+    const [productsData, listsData, storesData] = await Promise.all([
+      getProducts(),
       getShoppingLists(),
-      getShoppingListItems(),
+      getStores(),
     ]);
-    setCategories(categoriesData);
+
+    const normalizedLists = ensureListTotals(
+      listsData.map((list) => ({
+        ...list,
+        items: (list.items || []).map((item) => {
+          const quantity = typeof item.quantity === 'number' ? item.quantity : Number(item.quantity) || 1;
+          const estimatedPrice =
+            typeof item.estimatedPrice === 'number' ? item.estimatedPrice : Number(item.estimatedPrice) || 0;
+          return {
+            ...item,
+            quantity,
+            estimatedPrice,
+            subtotal: calculateItemSubtotal({ estimatedPrice, quantity }),
+          };
+        }),
+        budget: typeof list.budget === 'number' ? list.budget : Number(list.budget) || 0,
+      })),
+    );
+
+    setProducts(productsData);
+    setShoppingLists(normalizedLists);
     setStores(storesData);
-    setCatalog(catalogData);
-    setShoppingLists(listsData);
-    setShoppingListItems(listItemsData);
     setLoading(false);
   };
 
@@ -81,17 +85,23 @@ export const ShoppingDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
     Alert.alert('Error', 'Hubo un problema al guardar los datos.');
   };
 
-  const addList = async (payload: { name: string; budget?: number }) => {
+  const persistLists = async (lists: ShoppingList[]) => {
+    setShoppingLists(lists);
+    await saveShoppingLists(lists);
+  };
+
+  const addList = async (payload: { name: string; budget: number }) => {
     try {
       const newList: ShoppingList = {
         id: uuidv4(),
         name: payload.name,
-        budget: payload.budget,
+        budget: payload.budget ?? 0,
         createdAt: new Date().toISOString(),
+        items: [],
+        estimatedTotal: 0,
       };
       const updatedLists = [newList, ...shoppingLists];
-      setShoppingLists(updatedLists);
-      await saveShoppingLists(updatedLists);
+      await persistLists(updatedLists);
     } catch (error) {
       handleError(error);
     }
@@ -99,9 +109,10 @@ export const ShoppingDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const updateList = async (id: string, payload: Partial<ShoppingList>) => {
     try {
-      const updated = shoppingLists.map((list) => (list.id === id ? { ...list, ...payload } : list));
-      setShoppingLists(updated);
-      await saveShoppingLists(updated);
+      const updated = shoppingLists.map((list) =>
+        list.id === id ? recalculateList({ ...list, ...payload, items: payload.items ?? list.items }) : list,
+      );
+      await persistLists(updated);
     } catch (error) {
       handleError(error);
     }
@@ -110,81 +121,107 @@ export const ShoppingDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const deleteList = async (id: string) => {
     try {
       const updatedLists = shoppingLists.filter((list) => list.id !== id);
-      const updatedItems = shoppingListItems.filter((item) => item.listId !== id);
-      setShoppingLists(updatedLists);
-      setShoppingListItems(updatedItems);
-      await Promise.all([saveShoppingLists(updatedLists), saveShoppingListItems(updatedItems)]);
+      await persistLists(updatedLists);
     } catch (error) {
       handleError(error);
     }
   };
 
-  const addListItem = async (item: Omit<ShoppingListItem, 'id'>) => {
+  const addListItem = async (listId: string, item: Omit<ListItem, 'id' | 'subtotal'>) => {
     try {
-      const newItem: ShoppingListItem = { ...item, id: uuidv4() };
-      const updatedItems = [newItem, ...shoppingListItems];
-      setShoppingListItems(updatedItems);
-      await saveShoppingListItems(updatedItems);
+      const list = shoppingLists.find((l) => l.id === listId);
+      if (!list) return;
+      const priceFromProduct =
+        item.estimatedPrice || products.find((p) => p.id === item.productId)?.estimatedPrice || 0;
+      const normalized: ListItem = {
+        ...item,
+        id: uuidv4(),
+        estimatedPrice: priceFromProduct,
+        subtotal: calculateItemSubtotal({ estimatedPrice: priceFromProduct, quantity: item.quantity }),
+      };
+      const updatedLists = shoppingLists.map((l) =>
+        l.id === listId ? recalculateList({ ...l, items: [normalized, ...l.items] }) : l,
+      );
+      await persistLists(updatedLists);
     } catch (error) {
       handleError(error);
     }
   };
 
-  const updateListItem = async (id: string, changes: Partial<ShoppingListItem>) => {
+  const updateListItem = async (listId: string, itemId: string, changes: Partial<ListItem>) => {
     try {
-      const updatedItems = shoppingListItems.map((item) => (item.id === id ? { ...item, ...changes } : item));
-      setShoppingListItems(updatedItems);
-      await saveShoppingListItems(updatedItems);
+      const updatedLists = shoppingLists.map((list) => {
+        if (list.id !== listId) return list;
+        const items = list.items.map((item) => {
+          if (item.id !== itemId) return item;
+          const estimatedPrice =
+            changes.estimatedPrice ??
+            item.estimatedPrice ??
+            (item.productId ? products.find((p) => p.id === item.productId)?.estimatedPrice : 0) ??
+            0;
+          const quantity = changes.quantity ?? item.quantity;
+          return {
+            ...item,
+            ...changes,
+            estimatedPrice,
+            subtotal: calculateItemSubtotal({ estimatedPrice, quantity }),
+          };
+        });
+        return recalculateList({ ...list, items });
+      });
+      await persistLists(updatedLists);
     } catch (error) {
       handleError(error);
     }
   };
 
-  const deleteListItem = async (id: string) => {
+  const deleteListItem = async (listId: string, itemId: string) => {
     try {
-      const updatedItems = shoppingListItems.filter((item) => item.id !== id);
-      setShoppingListItems(updatedItems);
-      await saveShoppingListItems(updatedItems);
+      const updatedLists = shoppingLists.map((list) =>
+        list.id === listId ? recalculateList({ ...list, items: list.items.filter((i) => i.id !== itemId) }) : list,
+      );
+      await persistLists(updatedLists);
     } catch (error) {
       handleError(error);
     }
   };
 
-  const addCatalogItem = async (item: Omit<Item, 'id'>) => {
+  const addProduct = async (product: Omit<Product, 'id'>) => {
     try {
-      const newItem: Item = { ...item, id: uuidv4() };
-      const updated = [newItem, ...catalog];
-      setCatalog(updated);
-      await saveCatalogItems(updated);
+      const newProduct: Product = { ...product, id: uuidv4() };
+      const updated = [newProduct, ...products];
+      setProducts(updated);
+      await saveProducts(updated);
     } catch (error) {
       handleError(error);
     }
   };
 
-  const updateCatalogItem = async (id: string, changes: Partial<Item>) => {
+  const updateProduct = async (id: string, changes: Partial<Product>) => {
     try {
-      const updated = catalog.map((item) => (item.id === id ? { ...item, ...changes } : item));
-      setCatalog(updated);
-      await saveCatalogItems(updated);
+      const updated = products.map((p) => (p.id === id ? { ...p, ...changes } : p));
+      setProducts(updated);
+      await saveProducts(updated);
     } catch (error) {
       handleError(error);
     }
   };
 
-  const deleteCatalogItem = async (id: string) => {
+  const deleteProduct = async (id: string) => {
     try {
-      const updated = catalog.filter((item) => item.id !== id);
-      setCatalog(updated);
-      await saveCatalogItems(updated);
+      const updated = products.filter((p) => p.id !== id);
+      setProducts(updated);
+      await saveProducts(updated);
     } catch (error) {
       handleError(error);
     }
   };
 
-  const addStore = async (store: Omit<Store, 'id'>) => {
+  const addStore = async (name: string) => {
     try {
-      const newStore: Store = { ...store, id: uuidv4() };
-      const updated = [newStore, ...stores];
+      if (stores.some((store) => store.name.toLowerCase() === name.toLowerCase())) return;
+      const newStore: Store = { id: uuidv4(), name };
+      const updated = [...stores, newStore];
       setStores(updated);
       await saveStores(updated);
     } catch (error) {
@@ -192,33 +229,19 @@ export const ShoppingDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
-  const updateStore = async (id: string, changes: Partial<Store>) => {
-    try {
-      const updated = stores.map((store) => (store.id === id ? { ...store, ...changes } : store));
-      setStores(updated);
-      await saveStores(updated);
-    } catch (error) {
-      handleError(error);
-    }
-  };
-
-  const deleteStore = async (id: string) => {
-    try {
-      const updated = stores.filter((store) => store.id !== id);
-      setStores(updated);
-      await saveStores(updated);
-    } catch (error) {
-      handleError(error);
-    }
-  };
+  const categories = useMemo(() => {
+    const names = new Set<string>();
+    products.forEach((p) => names.add(p.category));
+    shoppingLists.forEach((list) => list.items.forEach((item) => names.add(item.category)));
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [products, shoppingLists]);
 
   const value = useMemo(
     () => ({
-      categories,
-      stores,
-      catalog,
+      products,
       shoppingLists,
-      shoppingListItems,
+      stores,
+      categories,
       loading,
       refresh: loadData,
       addList,
@@ -227,21 +250,12 @@ export const ShoppingDataProvider: React.FC<{ children: React.ReactNode }> = ({ 
       addListItem,
       updateListItem,
       deleteListItem,
-      addCatalogItem,
-      updateCatalogItem,
-      deleteCatalogItem,
+      addProduct,
+      updateProduct,
+      deleteProduct,
       addStore,
-      updateStore,
-      deleteStore,
     }),
-    [
-      categories,
-      stores,
-      catalog,
-      shoppingLists,
-      shoppingListItems,
-      loading,
-    ],
+    [products, shoppingLists, stores, categories, loading],
   );
 
   return <ShoppingDataContext.Provider value={value}>{children}</ShoppingDataContext.Provider>;

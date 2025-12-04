@@ -1,81 +1,99 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, TextInput, Button } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, Modal, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import StoreCard from '../components/StoreCard';
+import SectionTitle from '../components/SectionTitle';
+import ShoppingListItemRow from '../components/ShoppingListItemRow';
 import { useShoppingData } from '../hooks/useShoppingData';
-import { Store } from '../types/models';
+import { colors } from '../theme/colors';
+import { spacing } from '../theme/spacing';
+import { typography } from '../theme/typography';
+import { shadows } from '../theme/shadows';
 
 const StoresScreen: React.FC = () => {
-  const { stores, addStore, updateStore, deleteStore } = useShoppingData();
-  const [modalVisible, setModalVisible] = useState(false);
-  const [editing, setEditing] = useState<Store | null>(null);
-  const [name, setName] = useState('');
-  const [location, setLocation] = useState('');
+  const { shoppingLists } = useShoppingData();
+  const [selectedListId, setSelectedListId] = useState(shoppingLists[0]?.id);
+  const [openStore, setOpenStore] = useState<string | null>(null);
 
-  const openModal = (store?: Store) => {
-    if (store) {
-      setEditing(store);
-      setName(store.name);
-      setLocation(store.location ?? '');
-    } else {
-      setEditing(null);
-      setName('');
-      setLocation('');
+  React.useEffect(() => {
+    if (!selectedListId && shoppingLists[0]) {
+      setSelectedListId(shoppingLists[0].id);
     }
-    setModalVisible(true);
-  };
+  }, [shoppingLists, selectedListId]);
 
-  const handleSave = async () => {
-    if (!name.trim()) return;
-    if (editing) {
-      await updateStore(editing.id, { name, location });
-    } else {
-      await addStore({ name, location });
-    }
-    setModalVisible(false);
-  };
+  const currentList = useMemo(
+    () => shoppingLists.find((list) => list.id === selectedListId) ?? shoppingLists[0],
+    [shoppingLists, selectedListId],
+  );
+
+  const storeItems = useMemo(() => {
+    const map = new Map<string, { items: typeof currentList.items; total: number }>();
+    if (!currentList) return [];
+    currentList.items.forEach((item) => {
+      const list = map.get(item.store) ?? { items: [], total: 0 };
+      const total = list.total + item.subtotal;
+      map.set(item.store, { items: [...list.items, item], total });
+    });
+    return Array.from(map.entries()).map(([storeName, data]) => ({
+      storeName,
+      items: data.items,
+      total: data.total,
+    }));
+  }, [currentList]);
+
+  const selectedStore = storeItems.find((store) => store.storeName === openStore);
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Tiendas</Text>
-      <FlatList
-        data={stores}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.card} onPress={() => openModal(item)}>
-            <View>
-              <Text style={styles.cardTitle}>{item.name}</Text>
-              {item.location ? <Text style={styles.cardSubtitle}>{item.location}</Text> : null}
-            </View>
-            <TouchableOpacity onPress={() => deleteStore(item.id)}>
-              <Text style={styles.delete}>Eliminar</Text>
-            </TouchableOpacity>
+      <SectionTitle title='Tiendas' description='Revisa qué comprar en cada lugar' />
+      <View style={styles.listSelector}>
+        {shoppingLists.map((list) => (
+          <TouchableOpacity
+            key={list.id}
+            onPress={() => setSelectedListId(list.id)}
+            style={[styles.listChip, selectedListId === list.id && styles.listChipActive]}
+          >
+            <Text style={[styles.listChipText, selectedListId === list.id && styles.listChipTextActive]}>
+              {list.name}
+            </Text>
           </TouchableOpacity>
-        )}
-        contentContainerStyle={{ paddingBottom: 120 }}
-      />
-      <TouchableOpacity style={styles.fab} onPress={() => openModal()}>
-        <Text style={styles.fabText}>+ Agregar tienda</Text>
-      </TouchableOpacity>
+        ))}
+      </View>
 
-      <Modal visible={modalVisible} transparent animationType="slide">
+      <FlatList
+        data={storeItems}
+        keyExtractor={(item) => item.storeName}
+        renderItem={({ item }) => (
+          <StoreCard
+            name={item.storeName}
+            total={item.total}
+            itemsCount={item.items.length}
+            onPress={() => setOpenStore(item.storeName)}
+          />
+        )}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: spacing.xxl * 2 }}
+        ListEmptyComponent={<Text style={styles.empty}>No hay ítems asignados a tiendas.</Text>}
+      />
+
+      <Modal visible={!!selectedStore} transparent animationType='fade'>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{editing ? 'Editar tienda' : 'Nueva tienda'}</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Nombre"
-              value={name}
-              onChangeText={setName}
+            <Text style={styles.modalTitle}>{selectedStore?.storeName}</Text>
+            <Text style={styles.modalSubtitle}>
+              Total estimado ${selectedStore?.total.toLocaleString() ?? '0'}
+            </Text>
+            <FlatList
+              data={selectedStore?.items}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => <ShoppingListItemRow item={item} onEdit={() => {}} onDelete={() => {}} hideActions />}
+              ItemSeparatorComponent={() => <View style={{ height: spacing.xs }} />}
+              showsVerticalScrollIndicator={false}
             />
-            <TextInput
-              style={styles.input}
-              placeholder="Ubicación (opcional)"
-              value={location}
-              onChangeText={setLocation}
-            />
-            <View style={styles.modalButtons}>
-              <Button title="Cancelar" onPress={() => setModalVisible(false)} color="#6B7280" />
-              <Button title="Guardar" onPress={handleSave} color="#4F46E5" />
-            </View>
+            <TouchableOpacity style={styles.closeButton} onPress={() => setOpenStore(null)}>
+              <Ionicons name='close-circle' size={18} color={colors.primary} />
+              <Text style={styles.closeText}>Cerrar</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -86,86 +104,73 @@ const StoresScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 12,
-    color: '#111827',
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
+  listSelector: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
   },
-  cardTitle: {
-    fontWeight: '700',
-    fontSize: 16,
-    color: '#111827',
+  listChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  cardSubtitle: {
-    color: '#4B5563',
+  listChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
-  delete: {
-    color: '#DC2626',
-    fontWeight: '700',
+  listChipText: {
+    ...typography.body,
+    color: colors.text,
   },
-  fab: {
-    position: 'absolute',
-    right: 16,
-    bottom: 24,
-    backgroundColor: '#4F46E5',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 30,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 8,
-    elevation: 5,
+  listChipTextActive: {
+    color: colors.surface,
   },
-  fabText: {
-    color: '#fff',
-    fontWeight: '700',
+  empty: {
+    ...typography.body,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.lg,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'center',
-    padding: 16,
+    padding: spacing.lg,
   },
   modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    padding: spacing.lg,
+    ...shadows.md,
+    maxHeight: '80%',
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 12,
+    ...typography.h2,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-    backgroundColor: '#F9FAFB',
+  modalSubtitle: {
+    ...typography.body,
+    color: colors.textMuted,
+    marginBottom: spacing.md,
   },
-  modalButtons: {
+  closeButton: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.xs,
+    justifyContent: 'center',
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  closeText: {
+    ...typography.body,
+    color: colors.primary,
   },
 });
 

@@ -5,6 +5,7 @@ import HomeScreen from '../screens/HomeScreen';
 import CatalogScreen from '../screens/CatalogScreen';
 import StoresScreen from '../screens/StoresScreen';
 import SummaryScreen from '../screens/SummaryScreen';
+import { colors } from '../theme/colors';
 
 export type BottomTabParamList = {
   Home: undefined;
@@ -20,18 +21,29 @@ const BottomTabs: React.FC = () => {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: '#4F46E5',
-        tabBarInactiveTintColor: '#9CA3AF',
-        tabBarStyle: { paddingVertical: 8, height: 64 },
-        tabBarIcon: ({ color, size }) => {
-          const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
-            Home: 'home',
-            Catalog: 'pricetags',
-            Stores: 'storefront',
-            Summary: 'pie-chart',
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarStyle: {
+          height: 72,
+          paddingBottom: 12,
+          paddingTop: 10,
+          borderTopWidth: 0,
+          backgroundColor: colors.surface,
+          elevation: 8,
+        },
+        tabBarLabelStyle: { fontWeight: '700' },
+        tabBarIcon: ({ color, size, focused }) => {
+          const icons: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
+            Home: 'home-outline',
+            Catalog: 'pricetags-outline',
+            Stores: 'business-outline',
+            Summary: 'pie-chart-outline',
           };
-          const name = icons[route.name] ?? 'ellipse';
-          return <Ionicons name={name as any} size={size} color={color} />;
+          const name = icons[route.name] ?? 'ellipse-outline';
+          const iconName = (focused ? name.replace('-outline', '') : name) as React.ComponentProps<
+            typeof Ionicons
+          >['name'];
+          return <Ionicons name={iconName} size={size + 2} color={color} />;
         },
       })}
     >

@@ -1,38 +1,72 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, FlatList } from 'react-native';
+import Animated, { FadeIn } from 'react-native-reanimated';
+import SectionTitle from '../components/SectionTitle';
 import { useShoppingData } from '../hooks/useShoppingData';
-import { getCategoryTotals, getListEstimatedTotal } from '../utils/calculations';
+import { getCategoryTotals, getTotalsByStore } from '../utils/calculations';
+import { colors } from '../theme/colors';
+import { spacing } from '../theme/spacing';
+import { typography } from '../theme/typography';
+import { shadows } from '../theme/shadows';
 
 const SummaryScreen: React.FC = () => {
-  const { shoppingListItems, categories } = useShoppingData();
+  const { shoppingLists } = useShoppingData();
+  const allItems = shoppingLists.flatMap((list) => list.items);
 
-  const totalGlobal = useMemo(() => getListEstimatedTotal(shoppingListItems), [shoppingListItems]);
-  const totalsByCategory = useMemo(
-    () => getCategoryTotals(shoppingListItems, categories),
-    [shoppingListItems, categories],
+  const totalGlobal = useMemo(
+    () => shoppingLists.reduce((sum, list) => sum + (list.estimatedTotal || 0), 0),
+    [shoppingLists],
   );
+  const totalsByCategory = useMemo(() => getCategoryTotals(allItems), [allItems]);
+  const totalsByStore = useMemo(() => getTotalsByStore(allItems), [allItems]);
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Resumen</Text>
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Total estimado global</Text>
-        <Text style={styles.total}>${totalGlobal.toLocaleString()}</Text>
-      </View>
+      <SectionTitle title='Resumen' description='Totales estimados por lista, categoría y tienda' />
+      <Animated.View entering={FadeIn} style={styles.heroCard}>
+        <View>
+          <Text style={styles.heroLabel}>Total global</Text>
+          <Text style={styles.heroTotal}>${totalGlobal.toLocaleString()}</Text>
+        </View>
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{shoppingLists.length} listas</Text>
+        </View>
+      </Animated.View>
 
       <Text style={styles.subtitle}>Totales por categoría</Text>
       <FlatList
         data={totalsByCategory}
-        keyExtractor={(item) => item.categoryId}
-        renderItem={({ item }) => {
-          const categoryName = categories.find((c) => c.id === item.categoryId)?.name ?? 'Sin categoría';
-          return (
-            <View style={styles.categoryCard}>
-              <Text style={styles.categoryName}>{categoryName}</Text>
-              <Text style={styles.categoryTotal}>${item.total.toLocaleString()}</Text>
+        keyExtractor={(item) => item.category}
+        renderItem={({ item }) => (
+          <Animated.View entering={FadeIn.delay(50)} style={styles.card}>
+            <View>
+              <Text style={styles.cardTitle}>{item.category}</Text>
+              <Text style={styles.cardLabel}>Controla tus compras por sección</Text>
             </View>
-          );
-        }}
+            <Text style={styles.cardTotal}>${item.total.toLocaleString()}</Text>
+          </Animated.View>
+        )}
+        ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+        contentContainerStyle={{ paddingBottom: spacing.lg }}
+        showsVerticalScrollIndicator={false}
+      />
+
+      <Text style={[styles.subtitle, { marginTop: spacing.lg }]}>Totales por tienda</Text>
+      <FlatList
+        data={totalsByStore.filter((store) => store.total > 0)}
+        keyExtractor={(item) => item.store}
+        renderItem={({ item }) => (
+          <Animated.View entering={FadeIn.delay(50)} style={styles.card}>
+            <View>
+              <Text style={styles.cardTitle}>{item.store}</Text>
+              <Text style={styles.cardLabel}>Compras en esta tienda</Text>
+            </View>
+            <Text style={styles.cardTotal}>${item.total.toLocaleString()}</Text>
+          </Animated.View>
+        )}
+        ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+        contentContainerStyle={{ paddingBottom: spacing.xxl }}
+        showsVerticalScrollIndicator={false}
       />
     </View>
   );
@@ -41,56 +75,61 @@ const SummaryScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 12,
+  heroCard: {
+    backgroundColor: colors.primary,
+    borderRadius: 20,
+    padding: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.lg,
+    ...shadows.lg,
   },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
+  heroLabel: {
+    ...typography.subtitle,
+    color: '#FFE0B2',
   },
-  cardTitle: {
-    color: '#4B5563',
+  heroTotal: {
+    ...typography.h1,
+    color: '#fff',
   },
-  total: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#111827',
-    marginTop: 8,
+  badge: {
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: 14,
+  },
+  badgeText: {
+    ...typography.body,
+    color: '#fff',
   },
   subtitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginVertical: 8,
-    color: '#111827',
+    ...typography.h3,
+    marginBottom: spacing.sm,
   },
-  categoryCard: {
-    backgroundColor: '#EEF2FF',
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 10,
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    ...shadows.sm,
   },
-  categoryName: {
-    color: '#4338CA',
-    fontWeight: '700',
+  cardTitle: {
+    ...typography.h3,
   },
-  categoryTotal: {
-    fontWeight: '700',
-    color: '#111827',
+  cardLabel: {
+    ...typography.small,
+    color: colors.textMuted,
+  },
+  cardTotal: {
+    ...typography.h2,
+    color: colors.primary,
   },
 });
 

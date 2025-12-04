@@ -1,39 +1,34 @@
-export interface Category {
+export interface Product {
   id: string;
   name: string;
-  icon?: string;
+  category: string;
+  unit: string;
+  defaultStore: string;
+  estimatedPrice: number;
 }
 
-export interface Store {
+export interface ListItem {
   id: string;
+  productId?: string;
   name: string;
-  location?: string;
-}
-
-export interface Item {
-  id: string;
-  name: string;
-  defaultCategoryId: string;
-  defaultStoreId?: string;
-  unit?: string;
+  category: string;
+  unit: string;
+  quantity: number;
+  store: string;
+  estimatedPrice: number;
+  subtotal: number;
 }
 
 export interface ShoppingList {
   id: string;
   name: string;
   createdAt: string;
-  budget?: number;
+  budget: number;
+  items: ListItem[];
+  estimatedTotal: number;
 }
 
-export interface ShoppingListItem {
+export interface Store {
   id: string;
-  listId: string;
-  itemId?: string;
   name: string;
-  categoryId: string;
-  storeId?: string;
-  quantity: number;
-  unit?: string;
-  estimatedPrice?: number;
-  isChecked: boolean;
 }

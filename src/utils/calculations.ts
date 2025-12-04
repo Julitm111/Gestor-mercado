@@ -1,27 +1,39 @@
-import { Category, ShoppingListItem } from '../types/models';
+import { ListItem, ShoppingList, Store } from '../types/models';
 
-export const getListEstimatedTotal = (listItems: ShoppingListItem[]): number => {
-  return listItems.reduce((sum, item) => {
-    const price = item.estimatedPrice ?? 0;
-    return sum + price * (item.quantity || 0);
-  }, 0);
+export const calculateItemSubtotal = (item: Pick<ListItem, 'estimatedPrice' | 'quantity'>): number => {
+  const price = typeof item.estimatedPrice === 'number' ? item.estimatedPrice : Number(item.estimatedPrice) || 0;
+  const quantity = typeof item.quantity === 'number' ? item.quantity : Number(item.quantity) || 1;
+  return Math.max(0, price * quantity);
 };
 
-export const getListProgressPercentage = (listItems: ShoppingListItem[], budget?: number): number => {
+export const getListEstimatedTotal = (listItems: ListItem[]): number => {
+  return listItems.reduce((sum, item) => sum + calculateItemSubtotal(item), 0);
+};
+
+export const getListProgressPercentage = (total: number, budget: number): number => {
   if (!budget || budget <= 0) return 0;
-  const total = getListEstimatedTotal(listItems);
-  return Math.min(Math.round((total / budget) * 100), 200); // se limita a 200% para evitar barras infinitas
+  return Math.min(Math.round((total / budget) * 100), 999);
 };
 
-export const getCategoryTotals = (
-  listItems: ShoppingListItem[],
-  categories: Category[],
-): { categoryId: string; total: number }[] => {
-  return categories.map((category) => {
-    const itemsForCategory = listItems.filter((item) => item.categoryId === category.id);
-    return {
-      categoryId: category.id,
-      total: getListEstimatedTotal(itemsForCategory),
-    };
+export const recalculateList = (list: ShoppingList): ShoppingList => {
+  const estimatedTotal = getListEstimatedTotal(list.items || []);
+  return { ...list, estimatedTotal };
+};
+
+export const getCategoryTotals = (listItems: ListItem[]): { category: string; total: number }[] => {
+  const map = new Map<string, number>();
+  listItems.forEach((item) => {
+    const current = map.get(item.category) ?? 0;
+    map.set(item.category, current + calculateItemSubtotal(item));
   });
+  return Array.from(map.entries()).map(([category, total]) => ({ category, total }));
+};
+
+export const getTotalsByStore = (listItems: ListItem[]): { store: string; total: number }[] => {
+  const map = new Map<string, number>();
+  listItems.forEach((item) => {
+    const current = map.get(item.store) ?? 0;
+    map.set(item.store, current + calculateItemSubtotal(item));
+  });
+  return Array.from(map.entries()).map(([store, total]) => ({ store, total }));
 };

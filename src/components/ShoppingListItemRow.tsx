@@ -1,108 +1,97 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { ShoppingListItem, Store } from '../types/models';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import Animated, { FadeInRight, FadeOut } from 'react-native-reanimated';
+import { ListItem } from '../types/models';
+import { colors } from '../theme/colors';
+import { spacing } from '../theme/spacing';
+import { typography } from '../theme/typography';
+import { shadows } from '../theme/shadows';
+import Badge from './Badge';
 
 interface Props {
-  item: ShoppingListItem;
-  store?: Store;
-  onToggle: () => void;
+  item: ListItem;
   onEdit: () => void;
   onDelete: () => void;
+  hideActions?: boolean;
 }
 
-const ShoppingListItemRow: React.FC<Props> = ({ item, store, onToggle, onEdit, onDelete }) => {
+const ShoppingListItemRow: React.FC<Props> = ({ item, onEdit, onDelete, hideActions }) => {
   return (
-    <View style={[styles.container, item.isChecked && styles.checkedContainer]}>
-      <TouchableOpacity style={styles.checkbox} onPress={onToggle}>
-        <View style={[styles.checkboxInner, item.isChecked && styles.checkboxChecked]} />
-      </TouchableOpacity>
-      <View style={styles.info}>
-        <Text style={[styles.title, item.isChecked && styles.checkedText]}>{item.name}</Text>
-        <Text style={styles.subtitle}>
-          {item.quantity} {item.unit ?? ''} • ${item.estimatedPrice?.toLocaleString() ?? '0'}
-        </Text>
-        {store ? <Text style={styles.store}>Tienda: {store.name}</Text> : null}
+    <Animated.View entering={FadeInRight} exiting={FadeOut} style={styles.container}>
+      <View style={styles.row}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>{item.name}</Text>
+          <Text style={styles.meta}>
+            {item.quantity} {item.unit}
+          </Text>
+          <View style={styles.badges}>
+            <Badge label={item.category} />
+            <Badge label={item.store} />
+          </View>
+          <Text style={styles.price}>${item.estimatedPrice.toLocaleString()} c/u</Text>
+          <Text style={styles.subtotal}>Subtotal: ${item.subtotal.toLocaleString()}</Text>
+        </View>
+        {hideActions ? null : (
+          <View style={styles.actions}>
+            <Pressable style={styles.action} onPress={onEdit}>
+              <Ionicons name='create-outline' size={20} color={colors.text} />
+            </Pressable>
+            <Pressable style={styles.action} onPress={onDelete}>
+              <Ionicons name='trash-outline' size={20} color={colors.danger} />
+            </Pressable>
+          </View>
+        )}
       </View>
-      <View style={styles.actions}>
-        <TouchableOpacity onPress={onEdit}>
-          <Text style={styles.actionText}>Editar</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={onDelete}>
-          <Text style={[styles.actionText, styles.danger]}>Borrar</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+    </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    ...shadows.sm,
+  },
+  row: {
     flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    marginVertical: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
-  },
-  checkedContainer: {
-    opacity: 0.7,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#4F46E5',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkboxInner: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  checkboxChecked: {
-    backgroundColor: '#4F46E5',
-  },
-  info: {
-    flex: 1,
-    marginLeft: 12,
+    gap: spacing.md,
+    alignItems: 'flex-start',
   },
   title: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
+    ...typography.h3,
   },
-  subtitle: {
-    color: '#6B7280',
-    marginTop: 2,
+  meta: {
+    ...typography.small,
+    color: colors.textSecondary,
+    marginTop: spacing.xs / 2,
   },
-  store: {
-    marginTop: 2,
-    color: '#4B5563',
-    fontSize: 12,
+  badges: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  price: {
+    ...typography.body,
+    color: colors.primary,
+    marginTop: spacing.xs,
+  },
+  subtotal: {
+    ...typography.body,
+    color: colors.text,
+    marginTop: spacing.xs / 2,
+    fontWeight: '700',
   },
   actions: {
-    marginLeft: 8,
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    paddingVertical: 2,
+    flexDirection: 'row',
+    gap: spacing.xs,
   },
-  actionText: {
-    color: '#4F46E5',
-    fontWeight: '600',
-  },
-  danger: {
-    color: '#DC2626',
-  },
-  checkedText: {
-    textDecorationLine: 'line-through',
-    color: '#6B7280',
+  action: {
+    padding: spacing.xs,
+    borderRadius: 10,
+    backgroundColor: colors.surfaceMuted,
   },
 });
 
