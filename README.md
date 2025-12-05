@@ -35,9 +35,23 @@ src/
    npm install react-native-screens react-native-safe-area-context react-native-gesture-handler
    npm install @expo/vector-icons @react-native-async-storage/async-storage uuid
    npm install --save-dev @types/uuid
+   npx expo install react-native-reanimated
    ```
 5. Ejecuta en modo desarrollo: `npx expo start`.
 6. Para construir binarios: `npx expo run:android` o `npx expo run:ios`.
    También puedes usar EAS Build: `npx expo upload:*` según la plataforma.
 
 > Nota: AsyncStorage se usa como capa de persistencia ligera para mantener la app 100% offline y evitar dependencias nativas adicionales.
+
+Para convertirlo en APP
+1. Creas una cuenta de expo
+2. Dentro de la caepeta mercadoplanner
+  ```bash
+    npm install -g eas-cli
+    eas login  
+    eas build:configure
+    eas build -p android --profile production
+   ```
+3. Se descarga del link que se genera en la consola
+
+
