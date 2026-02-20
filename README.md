@@ -36,6 +36,7 @@ src/
    npm install @expo/vector-icons @react-native-async-storage/async-storage uuid
    npm install --save-dev @types/uuid
    npx expo install react-native-reanimated
+   npx expo install react-native-keyboard-aware-scroll-view
    ```
 5. Ejecuta en modo desarrollo: `npx expo start`.
 6. Para construir binarios: `npx expo run:android` o `npx expo run:ios`.
